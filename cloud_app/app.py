@@ -1,162 +1,200 @@
 from flask import Flask, render_template, request, redirect, url_for, session, send_from_directory, flash
-import os, json, smtplib, random, string
-from werkzeug.utils import secure_filename
+import os, json, hashlib, random, string, smtplib, shutil
 
 app = Flask(__name__)
-app.secret_key = "dein_geheimes_schluesselwort"
+app.secret_key = "RandomAutoPepe"  # unbedingt ändern
+USER_FOLDER = "user_files"
+MAX_STORAGE = 100 * 1024**3  # 100GB
 
-USERS_FILE = "users.json"
-BASE_DIR = "files"
-MAX_USER_STORAGE = 100 * 1024**3  # 100 GB
+# Lade User
+if os.path.exists("users.json"):
+    with open("users.json", "r") as f:
+        users = json.load(f)
+else:
+    users = {}
 
-os.makedirs(BASE_DIR, exist_ok=True)
+# Admin automatisch anlegen, falls nicht vorhanden
+if "RandomAuto" not in users:
+    hashed_pw = hashlib.sha256("RandomAuto".encode()).hexdigest()
+    users["RandomAuto"] = {"email":"admin@cloud.local","password":hashed_pw,"is_admin":True}
+    os.makedirs(os.path.join(USER_FOLDER, "RandomAuto"), exist_ok=True)
+    with open("users.json","w") as f:
+        json.dump(users,f)
 
-# --- Hilfsfunktionen ---
-def load_users():
-    if not os.path.exists(USERS_FILE):
-        return {}
-    with open(USERS_FILE, "r") as f:
-        return json.load(f)
+# Temporäre Verifizierungscodes
+if os.path.exists("verification.json"):
+    with open("verification.json","r") as f:
+        verification = json.load(f)
+else:
+    verification = {}
 
-def save_users(users):
-    with open(USERS_FILE, "w") as f:
-        json.dump(users, f, indent=4)
+# Hilfsfunktionen
+def hash_password(pw): return hashlib.sha256(pw.encode()).hexdigest()
+def send_verification_email(to_email, code):
+    # Beispiel SMTP, ggf. anpassen
+    try:
+        server = smtplib.SMTP("smtp.example.com", 587)
+        server.starttls()
+        server.login("youremail@example.com", "password")  # ersetzen
+        message = f"Subject: Verifizierungscode\n\nDein Code: {code}"
+        server.sendmail("youremail@example.com", to_email, message)
+        server.quit()
+    except Exception as e:
+        print("E-Mail Fehler:", e)
 
-def create_user_folder(username):
-    path = os.path.join(BASE_DIR, username)
-    os.makedirs(path, exist_ok=True)
-    return path
+def get_user_storage(username):
+    folder = os.path.join(USER_FOLDER, username)
+    total = 0
+    for root, dirs, files in os.walk(folder):
+        for f in files:
+            total += os.path.getsize(os.path.join(root, f))
+    return total
 
-def admin_required(func):
-    from functools import wraps
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        if "username" not in session or session.get("role") != "admin":
-            flash("Admin-Zugang erforderlich!", "danger")
-            return redirect(url_for("login"))
-        return func(*args, **kwargs)
-    return wrapper
+# ------------------ ROUTES ------------------
 
-def user_required(func):
-    from functools import wraps
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        if "username" not in session:
-            flash("Login erforderlich!", "danger")
-            return redirect(url_for("login"))
-        return func(*args, **kwargs)
-    return wrapper
-
-# --- E-Mail-Verifikation (Dummy-Funktion, hier SMTP eintragen) ---
-VERIFICATION_CODES = {}
-def send_verification_email(email, code):
-    # Hier SMTP oder API eintragen, aktuell nur Print
-    print(f"Verifizierungscode an {email}: {code}")
-
-# --- Login ---
-@app.route("/login", methods=["GET","POST"])
+@app.route("/", methods=["GET", "POST"])
 def login():
     if request.method=="POST":
         username = request.form["username"]
-        password = request.form["password"]
-        users = load_users()
-        user = users.get(username)
-        if user and user["password"]==password:
-            session["username"]=username
-            session["role"]=user["role"]
-            return redirect(url_for("dashboard"))
-        flash("Ungültige Zugangsdaten!", "danger")
+        password = hash_password(request.form["password"])
+        if username in users and users[username]["password"] == password:
+            session["username"] = username
+            session["is_admin"] = users[username]["is_admin"]
+            return redirect("/admin_dashboard" if users[username]["is_admin"] else "/dashboard")
+        flash("Ungültige Zugangsdaten")
     return render_template("login.html")
 
-# --- Logout ---
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect(url_for("login"))
-
-# --- Registrierung ---
 @app.route("/register", methods=["GET","POST"])
 def register():
     if request.method=="POST":
         username = request.form["username"]
         email = request.form["email"]
         password = request.form["password"]
-        users = load_users()
         if username in users:
-            flash("Benutzer existiert bereits!", "danger")
-            return redirect(url_for("register"))
-        # Verifizierungscode generieren
+            flash("Benutzer existiert bereits")
+            return redirect("/register")
         code = ''.join(random.choices(string.digits, k=6))
-        VERIFICATION_CODES[username] = {"code":code, "email":email, "password":password}
+        verification[username] = {"email":email, "password":hash_password(password), "code":code}
+        with open("verification.json","w") as f:
+            json.dump(verification,f)
         send_verification_email(email, code)
-        return redirect(url_for("verify", username=username))
+        session["verify_user"] = username
+        return redirect("/verify")
     return render_template("register.html")
 
-# --- Code-Verifikation ---
-@app.route("/verify/<username>", methods=["GET","POST"])
-def verify(username):
+@app.route("/verify", methods=["GET","POST"])
+def verify():
+    username = session.get("verify_user")
+    if not username or username not in verification:
+        return redirect("/register")
     if request.method=="POST":
-        input_code = request.form["code"]
-        info = VERIFICATION_CODES.get(username)
-        if info and input_code==info["code"]:
-            users = load_users()
-            users[username] = {"password":info["password"], "role":"user", "email":info["email"]}
-            save_users(users)
-            create_user_folder(username)
-            flash("Account erstellt!", "success")
-            VERIFICATION_CODES.pop(username)
-            return redirect(url_for("login"))
-        flash("Falscher Code!", "danger")
-    return render_template("verify.html", username=username)
+        code = request.form["code"]
+        if code == verification[username]["code"]:
+            # User erstellen
+            users[username] = {"email": verification[username]["email"], "password": verification[username]["password"], "is_admin": False}
+            os.makedirs(os.path.join(USER_FOLDER, username), exist_ok=True)
+            with open("users.json","w") as f:
+                json.dump(users,f)
+            verification.pop(username)
+            with open("verification.json","w") as f:
+                json.dump(verification,f)
+            session.pop("verify_user")
+            flash("Account erstellt! Bitte einloggen.")
+            return redirect("/")
+        flash("Falscher Code")
+    return render_template("verify.html")
 
-# --- Dashboard ---
-@app.route("/")
-@user_required
+@app.route("/dashboard")
 def dashboard():
+    if "username" not in session or session.get("is_admin"): return redirect("/")
     username = session["username"]
-    role = session["role"]
-    user_folder = os.path.join(BASE_DIR, username)
-    os.makedirs(user_folder, exist_ok=True)
-    files = os.listdir(user_folder)
-    return render_template("dashboard.html", username=username, role=role, files=files)
+    user_files = os.listdir(os.path.join(USER_FOLDER, username))
+    return render_template("dashboard.html", files=user_files)
 
-# --- Datei-Upload ---
-@app.route("/upload", methods=["POST"])
-@user_required
-def upload_file():
-    username = session["username"]
-    user_folder = os.path.join(BASE_DIR, username)
-    f = request.files["file"]
-    if f:
-        filename = secure_filename(f.filename)
-        f.save(os.path.join(user_folder, filename))
-    return redirect(url_for("dashboard"))
-
-# --- Datei-Download ---
-@app.route("/download/<filename>")
-@user_required
-def download_file(filename):
-    username = session["username"]
-    user_folder = os.path.join(BASE_DIR, username)
-    return send_from_directory(user_folder, filename, as_attachment=True)
-
-# --- Datei-Löschen ---
-@app.route("/delete/<filename>", methods=["POST"])
-@user_required
-def delete_file(filename):
-    username = session["username"]
-    user_folder = os.path.join(BASE_DIR, username)
-    path = os.path.join(user_folder, filename)
-    if os.path.exists(path):
-        os.remove(path)
-    return redirect(url_for("dashboard"))
-
-# --- Admin: alle Dateien einsehen ---
 @app.route("/admin_dashboard")
-@admin_required
 def admin_dashboard():
-    all_users = os.listdir(BASE_DIR)
-    return render_template("admin_dashboard.html", users=all_users)
+    if "username" not in session or not session.get("is_admin"): return redirect("/")
+    all_users = users
+    return render_template("admin_dashboard.html", all_users=all_users, user_folder=USER_FOLDER)
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return redirect("/")
+
+@app.route("/upload", methods=["POST"])
+def upload():
+    if "username" not in session: return redirect("/")
+    file = request.files["file"]
+    username = session["username"]
+    user_path = os.path.join(USER_FOLDER, username)
+    if get_user_storage(username) + len(file.read()) > MAX_STORAGE:
+        flash("Maximaler Speicher erreicht")
+        return redirect("/dashboard")
+    file.seek(0)
+    file.save(os.path.join(user_path, file.filename))
+    return "OK", 200
+
+@app.route("/download/<filename>")
+def download(filename):
+    if "username" not in session: return redirect("/")
+    username = session["username"]
+    path = os.path.join(USER_FOLDER, username)
+    if session.get("is_admin"):
+        # Admin kann alles downloaden
+        for user in os.listdir(USER_FOLDER):
+            if filename in os.listdir(os.path.join(USER_FOLDER, user)):
+                path = os.path.join(USER_FOLDER, user)
+                break
+    if os.path.exists(os.path.join(path, filename)):
+        return send_from_directory(path, filename, as_attachment=True)
+    return "Datei nicht gefunden", 404
+
+@app.route("/delete/<filename>", methods=["POST"])
+def delete_file(filename):
+    if "username" not in session: return redirect("/")
+    username = session["username"]
+    path = os.path.join(USER_FOLDER, username)
+    if session.get("is_admin"):
+        for user in os.listdir(USER_FOLDER):
+            if filename in os.listdir(os.path.join(USER_FOLDER, user)):
+                path = os.path.join(USER_FOLDER, user)
+                break
+    file_path = os.path.join(path, filename)
+    if os.path.exists(file_path):
+        os.remove(file_path)
+    return redirect("/admin_dashboard" if session.get("is_admin") else "/dashboard")
+
+@app.route("/delete_multiple", methods=["POST"])
+def delete_multiple():
+    if "username" not in session: return redirect("/")
+    files = request.form.getlist("delete_files")
+    for filename in files:
+        delete_file(filename)
+    return redirect("/admin_dashboard" if session.get("is_admin") else "/dashboard")
+
+# Optional: Admin Userverwaltung
+@app.route("/admin_create_user", methods=["POST"])
+def admin_create_user():
+    if "username" not in session or not session.get("is_admin"): return redirect("/")
+    username = request.form["username"]
+    password = hash_password(request.form["password"])
+    email = request.form.get("email","admin@cloud.local")
+    if username in users: flash("User existiert"); return redirect("/admin_dashboard")
+    users[username] = {"email":email,"password":password,"is_admin":False}
+    os.makedirs(os.path.join(USER_FOLDER, username), exist_ok=True)
+    with open("users.json","w") as f: json.dump(users,f)
+    return redirect("/admin_dashboard")
+
+@app.route("/admin_delete_user/<username>", methods=["POST"])
+def admin_delete_user(username):
+    if "username" not in session or not session.get("is_admin"): return redirect("/")
+    if username in users:
+        shutil.rmtree(os.path.join(USER_FOLDER, username), ignore_errors=True)
+        users.pop(username)
+        with open("users.json","w") as f: json.dump(users,f)
+    return redirect("/admin_dashboard")
 
 if __name__=="__main__":
+    os.makedirs(USER_FOLDER, exist_ok=True)
     app.run(debug=True)
