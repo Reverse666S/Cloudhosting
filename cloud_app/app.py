@@ -64,6 +64,17 @@ def login():
         flash("Ungültige Zugangsdaten")
     return render_template("login.html")
 
+@app.route("/admin_files")
+def admin_files():
+    if "username" not in session or not session.get("is_admin"):
+        return {}, 403
+    result = {}
+    for username, data in users.items():
+        folder = os.path.join(USER_FOLDER, username)
+        files = os.listdir(folder) if os.path.exists(folder) else []
+        result[username] = {"files": files, "is_admin": data["is_admin"]}
+    return result
+
 @app.route("/register", methods=["GET","POST"])
 def register():
     if request.method=="POST":
