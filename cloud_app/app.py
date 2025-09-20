@@ -184,6 +184,25 @@ def delete_multiple():
         delete_file(filename)
     return redirect("/admin_dashboard" if session.get("is_admin") else "/dashboard")
 
+@app.route("/user_files")
+def user_files():
+    if "username" not in session:
+        return {}, 403
+    username = session["username"]
+    folder = os.path.join(USER_FOLDER, username)
+    files = os.listdir(folder) if os.path.exists(folder) else []
+    return {"files": files}
+
+@app.route("/check_storage")
+def check_storage():
+    if "username" not in session:
+        return {"too_large": False}
+    username = session["username"]
+    file_size = int(request.args.get("file_size",0))
+    current = get_user_storage(username)
+    too_large = current + file_size > MAX_STORAGE
+    return {"too_large": too_large}
+
 # Optional: Admin Userverwaltung
 @app.route("/admin_create_user", methods=["POST"])
 def admin_create_user():
