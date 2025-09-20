@@ -3,23 +3,22 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Cloudhosting - Dashboard</title>
+<title>SkyCortex Cloud - Dashboard</title>
 <link rel="icon" href="/static/pepecraft.png" type="image/png">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 <style>
 body { background-color:#000; color:#fff; font-family:'Roboto',sans-serif; margin:0; padding:0; }
-.card { background-color:#0d0d0d; border:1px solid #00ff00; color:#fff; margin-bottom:1rem; border-radius:10px; }
-input, select { background-color:#003300; color:#fff; border:1px solid #00ff00; border-radius:5px; }
+.card { background-color:#0d0d0d; border:1px solid #00ff00; border-radius:10px; margin-bottom:1rem; padding:1rem; }
+input, select { background-color:#003300; color:#fff; border:1px solid #00ff00; border-radius:5px; padding:0.5rem; width:100%; margin-bottom:0.5rem; }
 a { color:#00ff00; text-decoration:none; }
 a:hover { color:#66ff66; }
-.btn-success { background-color:#00ff00; border:none; color:#000; }
+.btn-success { background-color:#00ff00; color:#000; border:none; width:100%; margin-top:0.5rem; }
 .btn-success:hover { background-color:#66ff66; }
-.btn-danger { background-color:#ff0000; border:none; color:#000; }
+.btn-danger { background-color:#ff0000; color:#000; border:none; }
 .btn-danger:hover { background-color:#ff6666; }
-h3,h4 { margin-bottom:1rem; }
-.progress { height:15px; border-radius:5px; }
-footer { text-align:center; margin-top:2rem; color:#fff; }
-#storageWarning { color:#ff4444; display:none; margin-top:0.5rem; text-align:center; }
+.progress { height:15px; border-radius:5px; margin-top:0.5rem; }
+footer { text-align:center; margin-top:2rem; }
+#storageWarning { color:#ff4444; text-align:center; display:none; margin-top:0.5rem; }
 .list-group-item { background-color:#0a0a0a; border:1px solid #00ff00; margin-bottom:2px; border-radius:5px; }
 </style>
 </head>
@@ -27,103 +26,84 @@ footer { text-align:center; margin-top:2rem; color:#fff; }
 <div class="container py-5">
     <div class="row justify-content-center">
         <div class="col-12 col-md-6">
-
-            <!-- Upload-Bereich -->
-            <div class="card p-3 shadow-sm mb-3">
-                <h3 class="text-center mb-3">Datei hochladen</h3>
+            <!-- Upload -->
+            <div class="card">
+                <h3 class="text-center mb-2">Datei hochladen</h3>
                 <form id="uploadForm" method="post" enctype="multipart/form-data">
-                    <input type="file" name="file" class="form-control mb-2" required>
-                    <button type="submit" class="btn btn-success w-100">Hochladen</button>
+                    <input type="file" name="file" required>
+                    <button type="submit" class="btn-success">Hochladen</button>
                 </form>
-                <div class="progress mt-3" id="progressContainer" style="display:none;">
+                <div class="progress" id="progressContainer" style="display:none;">
                     <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width:0%">0%</div>
                 </div>
                 <div id="storageWarning">Maximaler Speicher erreicht!</div>
             </div>
 
             <!-- Eigene Dateien -->
-            <div class="card p-3 shadow-sm mb-3">
-                <h4 class="mb-3">Meine Dateien</h4>
-                <div id="fileContainer">
-                    <ul class="list-group list-group-flush" id="fileList">
-                        <!-- Dateien per JS dynamisch geladen -->
-                    </ul>
-                </div>
+            <div class="card">
+                <h4 class="mb-2">Meine Dateien</h4>
+                <ul class="list-group list-group-flush" id="fileList"></ul>
             </div>
 
             <form method="post" action="/logout">
-                <button class="btn btn-outline-secondary w-100">Logout</button>
+                <button class="btn-success mt-2">Logout</button>
             </form>
-
         </div>
     </div>
 </div>
 
 <footer>
-    <span>Powered by Danger222</span>
+    <span>Powered by Danger222</span><br>
     <img src="/static/pepecraft.png" alt="Logo" style="height:50px;">
 </footer>
 
 <script>
-// Upload-Fortschritt
+// Upload
 document.getElementById("uploadForm").addEventListener("submit", function(e){
     e.preventDefault();
-    const form = e.target;
-    const file = form.querySelector('input[type="file"]').files[0];
+    const file = e.target.querySelector('input[type="file"]').files[0];
     const progressContainer = document.getElementById("progressContainer");
     const progressBar = progressContainer.querySelector(".progress-bar");
     const storageWarning = document.getElementById("storageWarning");
 
-    // Speicherprüfung per AJAX
     fetch("/check_storage?file_size="+file.size)
-        .then(r => r.json())
-        .then(data => {
-            if(data.too_large){
-                storageWarning.style.display = "block";
-                return;
-            }
-            storageWarning.style.display = "none";
+        .then(r=>r.json())
+        .then(data=>{
+            if(data.too_large){ storageWarning.style.display="block"; return; }
+            storageWarning.style.display="none";
+            progressContainer.style.display="block";
+            progressBar.style.width="0%";
+            progressBar.textContent="0%";
 
-            progressContainer.style.display = "block";
-            progressBar.style.width = "0%";
-            progressBar.textContent = "0%";
-
-            const formData = new FormData(form);
+            const formData = new FormData(e.target);
             const xhr = new XMLHttpRequest();
-            xhr.upload.addEventListener("progress", function(event){
+            xhr.upload.addEventListener("progress", event=>{
                 if(event.lengthComputable){
-                    let percent = Math.round((event.loaded / event.total) * 100);
+                    let percent = Math.round((event.loaded/event.total)*100);
                     progressBar.style.width = percent+"%";
                     progressBar.textContent = percent+"%";
                 }
             });
-            xhr.addEventListener("load", function(){
-                if(xhr.status===200){ 
-                    progressBar.classList.add("bg-success"); 
-                    progressBar.textContent="Fertig!"; 
-                    loadFiles(); // Dateien direkt aktualisieren
-                } else { 
-                    progressBar.classList.add("bg-danger"); 
-                    progressBar.textContent="Fehler!"; 
-                }
+            xhr.addEventListener("load", ()=>{
+                if(xhr.status===200){ progressBar.classList.add("bg-success"); progressBar.textContent="Fertig!"; loadFiles(); }
+                else { progressBar.classList.add("bg-danger"); progressBar.textContent="Fehler!"; }
             });
             xhr.open("POST","/upload");
             xhr.send(formData);
         });
 });
 
-// Dynamische Dateiliste laden
+// Dateiliste laden
 function loadFiles(){
     fetch("/user_files")
-        .then(r => r.json())
-        .then(data => {
+        .then(r=>r.json())
+        .then(data=>{
             const fileList = document.getElementById("fileList");
             fileList.innerHTML = "";
-            data.files.forEach(file => {
-                let li = document.createElement("li");
-                li.className = "list-group-item d-flex justify-content-between align-items-center";
-                li.innerHTML = `
-                    <span>${file}</span>
+            data.files.forEach(file=>{
+                const li = document.createElement("li");
+                li.className="list-group-item d-flex justify-content-between align-items-center";
+                li.innerHTML = `<span>${file}</span>
                     <div>
                         <a href="/download/${file}" class="btn btn-success btn-sm me-1">Download</a>
                         <form method="post" action="/delete/${file}" style="display:inline;">
@@ -135,7 +115,6 @@ function loadFiles(){
         });
 }
 
-// Initial laden + alle 10 Sekunden aktualisieren
 loadFiles();
 setInterval(loadFiles, 10000);
 </script>
