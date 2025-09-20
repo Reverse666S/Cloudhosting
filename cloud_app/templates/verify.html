@@ -3,24 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SkyCortex - Verifizierung</title>
+<title>Verifizierung - SkyCortex</title>
 <link rel="icon" href="/static/pepecraft.png" type="image/png">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 <style>
-body { background-color:#000; color:#fff; font-family:'Roboto',sans-serif; display:flex; justify-content:center; align-items:center; height:100vh; }
-.card { background-color:#0d0d0d; border:1px solid #00ff00; padding:2rem; width:100%; max-width:400px; border-radius:10px; }
-input { background-color:#003300; color:#fff; border:1px solid #00ff00; }
-.btn-success { background-color:#00ff00; color:#000; border:none; }
+body { background-color:#000; color:#fff; font-family:'Roboto',sans-serif; display:flex; justify-content:center; align-items:center; min-height:100vh; margin:0; }
+.card { background-color:#0d0d0d; border:1px solid #00ff00; border-radius:10px; padding:2rem; width:100%; max-width:400px; }
+input { background-color:#003300; color:#fff; border:1px solid #00ff00; border-radius:5px; margin-bottom:1rem; padding:0.5rem; width:100%; }
+.btn-success { background-color:#00ff00; color:#000; border:none; width:100%; padding:0.5rem; font-size:1rem; }
 .btn-success:hover { background-color:#66ff66; }
-h2{text-align:center;margin-bottom:2rem;}
 </style>
 </head>
 <body>
 <div class="card">
-    <h2>Verifizierungscode eingeben</h2>
-    <form method="post" action="/verify">
-        <input type="text" name="code" class="form-control mb-3" placeholder="Verifizierungscode" required>
-        <button type="submit" class="btn btn-success w-100 mb-3">Bestätigen</button>
+    <h2 class="text-center mb-3">Verifizierung</h2>
+    <p>Bitte gebe den Code ein, den du per E-Mail erhalten hast.</p>
+    <form method="post">
+        <input type="hidden" name="username" value="{{ username }}">
+        <input type="text" name="code" placeholder="Verifizierungscode" required>
+        <button class="btn-success" type="submit">Abschließen</button>
     </form>
 </div>
 </body>
